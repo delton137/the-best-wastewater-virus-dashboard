@@ -129,6 +129,48 @@ export async function writeAggregates(
     (trends[key] ??= []).push([r.week, r.value]);
   }
 
+  // Trends in source units — same grain as trends, but y = weekly median across sites of
+  // each site's weekly median value_raw (as in seasonal), so values keep the source's units.
+  // Units differ by source, so they are only comparable within a country.
+  const unitRows = await query<{
+    country: string;
+    admin1: string;
+    pathogen: string;
+    week: string;
+    value: number;
+    unit: string;
+  }>(
+    conn,
+    `
+    WITH site_week AS (
+      SELECT country, admin1, pathogen, site_id,
+             strftime(date_trunc('week', sample_date), '%Y-%m-%d') AS week,
+             median(value_raw) AS site_val,
+             any_value(unit_raw) AS unit
+      FROM m GROUP BY 1,2,3,4,5
+    )
+    SELECT country, admin1, pathogen, week, value, unit FROM (
+      SELECT country, admin1, pathogen, week,
+             median(site_val) AS value, any_value(unit) AS unit
+      FROM site_week WHERE admin1 IS NOT NULL GROUP BY 1,2,3,4
+      UNION ALL
+      SELECT country, 'ALL' AS admin1, pathogen, week,
+             median(site_val) AS value, any_value(unit) AS unit
+      FROM site_week GROUP BY 1,2,3,4
+    ) ORDER BY country, admin1, pathogen, week
+  `,
+  );
+  const trendsUnits: {
+    units: Record<string, string>; // `${country}__${pathogen}` → unit
+    series: Record<string, [string, number][]>;
+  } = { units: {}, series: {} };
+  for (const r of unitRows) {
+    const key = `${r.country}__${r.admin1}__${r.pathogen}`;
+    // 4 significant digits keeps the file small without flattening small concentrations.
+    (trendsUnits.series[key] ??= []).push([r.week, Number(r.value.toPrecision(4))]);
+    trendsUnits.units[`${r.country}__${r.pathogen}`] ??= r.unit;
+  }
+
   // Coverage — per-source stats for the transparency page.
   const coverage = await query(
     conn,
@@ -234,6 +276,7 @@ export async function writeAggregates(
 
   await writeJson("regions.json", regions);
   await writeJson("trends.json", trends);
+  await writeJson("trends_units.json", trendsUnits);
   await writeJson("seasonal.json", seasonal);
   await writeJson("coverage.json", coverage);
   await writeJson("meta.json", {

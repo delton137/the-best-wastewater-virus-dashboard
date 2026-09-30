@@ -1,15 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
+import { fmtCount } from "../lib/format";
+
+export type TrendYMode = "activity" | "units";
 
 export interface TrendSeries {
   label: string;
   color: string;
   data: [string, number][]; // [weekISO, value]
   show?: boolean; // initial visibility; toggle via the legend checkbox
+  unit?: string; // source unit, used for the y axis in "units" mode
 }
+
+const AXIS = { stroke: "#94a3c4", ticks: { stroke: "#26315044" } };
+const GRID = { stroke: "#26315044" };
+/** Axis labels drop the parenthetical detail, e.g. "(flow-population normalized)". */
+const shortUnit = (unit: string) => unit.replace(/\s*\(.*\)\s*$/, "");
 
 /** Align multiple [date,value] series onto a shared x axis (union of dates). */
 function align(series: TrendSeries[]): uPlot.AlignedData {
@@ -26,11 +35,28 @@ function align(series: TrendSeries[]): uPlot.AlignedData {
   return [xNum, ...ys] as uPlot.AlignedData;
 }
 
-export default function TrendChart({ series }: { series: TrendSeries[] }) {
+export default function TrendChart({
+  series,
+  mode = "activity",
+}: {
+  series: TrendSeries[];
+  mode?: TrendYMode;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const plotRef = useRef<uPlot | null>(null);
+  // Legend toggles by label, so switching y-axis mode keeps the user's selection.
+  const visibility = useRef(new Map<string, boolean>());
+  // In units mode the axes depend on which series are shown, so a toggle rebuilds the plot.
+  const [visVersion, setVisVersion] = useState(0);
 
   const data = useMemo(() => align(series), [series]);
+  // Rebuild when the mode or set/labels/units of series changes (not on every data tick),
+  // and on legend toggles in units mode.
+  const rebuildKey = [
+    mode,
+    mode === "units" ? visVersion : 0,
+    ...series.map((s) => `${s.label}:${s.unit ?? ""}`),
+  ].join("|");
 
   useEffect(() => {
     if (!ref.current) return;
@@ -39,36 +65,74 @@ export default function TrendChart({ series }: { series: TrendSeries[] }) {
     let ro: ResizeObserver | null = null;
     let cancelled = false;
 
+    const isShown = (s: TrendSeries) => visibility.current.get(s.label) ?? s.show ?? true;
+    // Activity: one shared 0–100 axis. Units: one scale per physical unit (US and NZ share
+    // copies/person/day), with an axis — left, then right — only for units of shown series.
+    const unitOf = (s: TrendSeries) => shortUnit(s.unit ?? "");
+    const units =
+      mode === "units" ? [...new Set(series.map(unitOf))] : [];
+    const scaleOf = (s: TrendSeries) =>
+      mode === "units" ? `u${units.indexOf(unitOf(s))}` : "y";
+    const axisUnits = units.filter((unit) =>
+      series.some((s) => isShown(s) && unitOf(s) === unit),
+    );
+    const scales: uPlot.Scales =
+      mode === "units"
+        ? Object.fromEntries(
+            units.map((_, i) => [
+              `u${i}`,
+              {
+                range: (_u: uPlot, _min: number, max: number) =>
+                  [0, max > 0 ? max * 1.05 : 1] as uPlot.Range.MinMax,
+              },
+            ]),
+          )
+        : { y: { range: [0, 100] } };
+    const yAxes: uPlot.Axis[] =
+      mode === "units"
+        ? axisUnits.map((unit, i) => ({
+            ...AXIS,
+            scale: `u${units.indexOf(unit)}`,
+            side: i % 2 ? 1 : 3,
+            grid: i ? { show: false } : GRID,
+            label: unit,
+            values: (_u, splits) => splits.map((v) => fmtCount(v)),
+            size: 60,
+          }))
+        : [{ ...AXIS, grid: GRID, label: "Within-site activity (0–100)" }];
+
     const opts: uPlot.Options = {
       width: el.clientWidth || 600,
       height: 320,
-      scales: { y: { range: [0, 100] } },
+      scales,
       legend: {
         show: true,
         // Filled marker = checked box; CSS draws the check mark and empties it when off.
         markers: { fill: (_u, i) => series[i - 1]?.color ?? "transparent" },
       },
-      axes: [
-        {
-          stroke: "#94a3c4",
-          grid: { stroke: "#26315044" },
-          ticks: { stroke: "#26315044" },
-        },
-        {
-          stroke: "#94a3c4",
-          grid: { stroke: "#26315044" },
-          ticks: { stroke: "#26315044" },
-          label: "Within-site activity (0–100)",
-        },
-      ],
+      axes: [{ ...AXIS, grid: GRID }, ...yAxes],
+      hooks: {
+        setSeries: [
+          (u) => {
+            u.series.forEach((s, i) => {
+              if (i > 0) visibility.current.set(String(s.label), !!s.show);
+            });
+            if (mode === "units") setVisVersion((v) => v + 1);
+          },
+        ],
+      },
       series: [
         { label: "Week" },
         ...series.map((s) => ({
           label: s.label,
           stroke: s.color,
           width: 2,
-          show: s.show ?? true,
+          show: isShown(s),
+          scale: scaleOf(s),
           points: { show: false },
+          ...(mode === "units" && {
+            value: (_u: uPlot, v: number | null) => fmtCount(v),
+          }),
         })),
       ],
     };
@@ -90,9 +154,8 @@ export default function TrendChart({ series }: { series: TrendSeries[] }) {
       plot?.destroy();
       plotRef.current = null;
     };
-    // Rebuild when the set/labels of series changes (not on every data tick).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [series.map((s) => s.label).join("|")]);
+  }, [rebuildKey]);
 
   // Update data in place when values change without a full rebuild.
   useEffect(() => {

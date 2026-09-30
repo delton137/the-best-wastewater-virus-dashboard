@@ -6,7 +6,8 @@ historical depth as each source allows (back to **2020** for the deepest series)
 
 - **Map** of state/region activity, colored by each site's percentile within its own
   history (the only metric that's comparable across labs — absolute concentrations are not).
-- **Pathogen switcher** and **trend charts** (national + drill-down per region).
+- **Pathogen switcher** and **trend charts** (national + drill-down per region), with a
+  y-axis toggle between within-site activity (0–100) and each source's own units.
 - **Coverage page** with provenance, history span, and licensing for every source.
 
 Currently ingesting **473k+ measurements** from CDC NWSS (US, 2020-07→, 2,330 sites,
@@ -113,6 +114,7 @@ lake and aggregates. An explicitly selected subset still replaces the dataset wi
 that subset; use `ingest:all` for production refreshes.
 
 Map and trend averages give each reporting site equal weight within the displayed
-window or week. Seasonal medians retain fractional concentrations. Gray map markers
+window or week. Seasonal medians and source-unit trends (`trends_units.json`: weekly
+median across sites of each site's weekly median) retain fractional concentrations. Gray map markers
 have a latest sample more than 90 days old; selecting a marker shows its sample date.
 This threshold indicates data freshness, not a health-risk category.

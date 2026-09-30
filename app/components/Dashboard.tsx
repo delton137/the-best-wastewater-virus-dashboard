@@ -7,15 +7,17 @@ import {
   loadMeta,
   loadRegions,
   loadTrends,
+  loadTrendsUnits,
   trendKey,
   type Meta,
   type RegionMarker,
   type SourceCoverage,
   type Trends,
+  type TrendsUnits,
 } from "../lib/aggregates";
 import { isStale } from "../lib/freshness";
 import MapView, { type RegionSelection } from "./MapView";
-import TrendChart, { type TrendSeries } from "./TrendChart";
+import TrendChart, { type TrendSeries, type TrendYMode } from "./TrendChart";
 import Provenance from "./Provenance";
 import ResizablePanels from "./ResizablePanels";
 import SeasonalPanel from "./SeasonalPanel";
@@ -48,6 +50,9 @@ export default function Dashboard({ initialView = "trends" }: { initialView?: "t
   const [error, setError] = useState<string | null>(null);
 
   const [pathogen, setPathogen] = useState<Pathogen>("sars_cov_2");
+  const [yMode, setYMode] = useState<TrendYMode>("activity");
+  const [trendsUnits, setTrendsUnits] = useState<TrendsUnits | null>(null);
+  const [unitsError, setUnitsError] = useState<string | null>(null);
   const [selection, setSelection] = useState<RegionSelection | null>(null);
 
   useEffect(() => {
@@ -60,6 +65,12 @@ export default function Dashboard({ initialView = "trends" }: { initialView?: "t
       })
       .catch((e) => setError(String(e)));
   }, []);
+
+  // Source-unit trends are only fetched the first time that y-axis mode is chosen.
+  useEffect(() => {
+    if (yMode !== "units" || trendsUnits) return;
+    loadTrendsUnits().then(setTrendsUnits).catch((e) => setUnitsError(String(e)));
+  }, [yMode, trendsUnits]);
 
   const availablePathogens = useMemo(
     () => new Set(meta?.pathogens ?? []),
@@ -84,37 +95,46 @@ export default function Dashboard({ initialView = "trends" }: { initialView?: "t
   }, [markers, selection]);
 
   const series: TrendSeries[] = useMemo(() => {
+    const source = yMode === "units" ? trendsUnits?.series : trends;
+    if (!source) return [];
+    const unitOf = (country: string) =>
+      trendsUnits?.units[`${country}__${pathogen}`];
     if (selection) {
       const out: TrendSeries[] = [];
       const regionData =
-        trends[trendKey(selection.country, selection.admin1, pathogen)];
+        source[trendKey(selection.country, selection.admin1, pathogen)];
       if (regionData)
         out.push({
           label: `${selection.admin1}, ${selection.country}`,
           color: "#e6ebf5",
           data: regionData,
+          unit: unitOf(selection.country),
         });
-      const natData = trends[trendKey(selection.country, "ALL", pathogen)];
+      const natData = source[trendKey(selection.country, "ALL", pathogen)];
       if (natData)
         out.push({
           label: `${COUNTRY_NAMES[selection.country] ?? selection.country} (national)`,
           color: COUNTRY_COLORS[selection.country] ?? "#94a3c4",
           data: natData,
+          unit: unitOf(selection.country),
         });
       return out;
     }
     // No selection → national series for every country with data for this pathogen.
     const countries = meta?.countries ?? [];
     return countries
-      .map((c) => ({ c, data: trends[trendKey(c, "ALL", pathogen)] }))
+      .map((c) => ({ c, data: source[trendKey(c, "ALL", pathogen)] }))
       .filter((x) => x.data && x.data.length)
       .map(({ c, data }) => ({
         label: COUNTRY_NAMES[c] ?? c,
         color: COUNTRY_COLORS[c] ?? "#94a3c4",
         data: data!,
         show: DEFAULT_TREND_COUNTRIES.has(c),
+        unit: unitOf(c),
       }));
-  }, [selection, trends, pathogen, meta]);
+  }, [selection, trends, trendsUnits, yMode, pathogen, meta]);
+
+  const seriesUnits = [...new Set(series.map((s) => s.unit).filter(Boolean))];
 
   // Provenance for the current view: the selected region's sources, else the union across
   // all visible markers for this pathogen.
@@ -206,18 +226,37 @@ export default function Dashboard({ initialView = "trends" }: { initialView?: "t
             : "National trends"}{" "}
           — {PATHOGEN_LABELS[pathogen]}
         </h2>
+        <div className="controls" role="group" aria-label="Trend y-axis">
+          {(["activity", "units"] as const).map((option) => (
+            <button key={option} className={`chip ${yMode === option ? "active" : ""}`}
+              aria-pressed={yMode === option} onClick={() => setYMode(option)}>
+              {option === "activity" ? "Within-site activity" : "Source units"}
+            </button>
+          ))}
+        </div>
         <div className="trend-meta">
           {selection ? (
             <button className="chip" onClick={() => setSelection(null)}>
               ← back to national
             </button>
           ) : (
-            "Click a region on the map to drill in. Values are each site's percentile within its own history (0–100), averaged."
-          )}
+            "Click a region on the map to drill in."
+          )}{" "}
+          {yMode === "activity"
+            ? "Values are each site's percentile within its own history (0–100), averaged."
+            : `Values are the weekly median across sites in each source's own units (${seriesUnits.join("; ")}).${
+                seriesUnits.length > 1
+                  ? " Units differ by country, so they get separate axes; compare shapes, not heights, across countries."
+                  : ""
+              }`}
         </div>
 
-        {series.length ? (
-          <TrendChart series={series} />
+        {yMode === "units" && unitsError ? (
+          <p className="muted" role="alert">Could not load source-unit trends: {unitsError}</p>
+        ) : yMode === "units" && !trendsUnits ? (
+          <p className="muted" role="status">Loading source-unit trends…</p>
+        ) : series.length ? (
+          <TrendChart series={series} mode={yMode} />
         ) : (
           <p className="muted">No trend data for this selection yet.</p>
         )}

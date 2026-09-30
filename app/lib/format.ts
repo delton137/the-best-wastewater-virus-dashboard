@@ -2,8 +2,10 @@
 export function fmtCount(value: number | null): string {
   if (value == null || !Number.isFinite(value)) return "";
   const magnitude = Math.abs(value);
-  if (magnitude >= 1e9) return `${(value / 1e9).toFixed(1)}B`;
-  if (magnitude >= 1e6) return `${(value / 1e6).toFixed(magnitude >= 1e7 ? 0 : 1)}M`;
-  if (magnitude >= 1e3) return `${(value / 1e3).toFixed(0)}k`;
-  return String(Number(value.toPrecision(3)));
+  // 3 significant digits, so ticks like 12.5M or 2.5k are not rounded to 13M / 3k.
+  const sig = (v: number) => Number(v.toPrecision(3));
+  if (magnitude >= 1e9) return `${sig(value / 1e9)}B`;
+  if (magnitude >= 1e6) return `${sig(value / 1e6)}M`;
+  if (magnitude >= 1e3) return `${sig(value / 1e3)}k`;
+  return String(sig(value));
 }

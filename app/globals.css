@@ -225,6 +225,8 @@ table.coverage th {
   border: solid #fff;
   border-width: 0 2px 2px 0;
   transform: translate(-50%, -50%) rotate(45deg);
+  /* Keeps the check visible on light series colors (e.g. the white region line). */
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
 }
 .trend-chart .u-legend .u-off .u-marker { background: transparent !important; }
 .trend-chart .u-legend .u-off .u-marker::after { display: none; }

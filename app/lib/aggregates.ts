@@ -18,6 +18,12 @@ export interface RegionMarker {
 /** key = `${country}__${admin1|ALL}__${pathogen}` → [weekISO, value][] */
 export type Trends = Record<string, [string, number][]>;
 
+/** Trends in each source's own units: weekly median across sites of per-site weekly medians. */
+export interface TrendsUnits {
+  units: Record<string, string>; // `${country}__${pathogen}` → unit
+  series: Trends; // same keys as Trends
+}
+
 export interface SourceCoverage {
   source_id: string;
   rows: number;
@@ -54,7 +60,8 @@ async function getJson<T>(name: string): Promise<T> {
 
 export const loadRegions = () => getJson<RegionMarker[]>("regions.json");
 export const loadTrends = () => getJson<Trends>("trends.json");
-export const loadCoverage = () => getJson<SourceCoverage[]>("coverage.json");
+export const loadTrendsUnits = () => getJson<TrendsUnits>("trends_units.json");
+export const loadCoverage =() => getJson<SourceCoverage[]>("coverage.json");
 export const loadMeta = () => getJson<Meta>("meta.json");
 export const loadSeasonal = () => getJson<Seasonal>("seasonal.json");
 

@@ -8,6 +8,9 @@ test("small concentrations stay visible in chart labels", () => {
   assert.equal(fmtCount(0.11), "0.11");
   assert.equal(fmtCount(0), "0");
   assert.equal(fmtCount(30_000_000), "30M");
+  assert.equal(fmtCount(12_500_000), "12.5M");
+  assert.equal(fmtCount(2_500), "2.5k");
+  assert.equal(fmtCount(175_000_000), "175M");
   assert.equal(fmtCount(null), "");
   assert.equal(fmtCount(Infinity), "");
 });

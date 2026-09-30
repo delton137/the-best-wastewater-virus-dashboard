@@ -7,7 +7,7 @@ import { DuckDBInstance } from "@duckdb/node-api";
 import { writeAggregates } from "../ingestion/lib/writers";
 import { materializeParts } from "../ingestion/lib/materialize";
 import { query } from "../ingestion/lib/duck";
-import type { RegionMarker, Seasonal, Trends } from "../app/lib/aggregates";
+import type { RegionMarker, Seasonal, Trends, TrendsUnits } from "../app/lib/aggregates";
 
 // A has three high readings in the target week; B has one low reading.
 // Their within-history ranks average to 2/3 and 0, respectively.
@@ -34,6 +34,12 @@ test("aggregates retain decimals and weight sites equally despite unequal sampli
     const trends: Trends = await read("trends.json");
     for (const key of ["CA__Ontario__influenza_a", "CA__ALL__influenza_a"]) {
       assert.equal(trends[key].find(([week]) => week === "2026-01-05")?.[1], 33.3);
+    }
+    // Source units: site medians (A: 0.2, B: 0.02) → median across sites 0.11 copies/mL.
+    const trendsUnits: TrendsUnits = await read("trends_units.json");
+    assert.equal(trendsUnits.units.CA__influenza_a, "copies/mL");
+    for (const key of ["CA__Ontario__influenza_a", "CA__ALL__influenza_a"]) {
+      assert.equal(trendsUnits.series[key].find(([week]) => week === "2026-01-05")?.[1], 0.11);
     }
     const regions: RegionMarker[] = await read("regions.json");
     assert.equal(regions[0].value, 33.3);
