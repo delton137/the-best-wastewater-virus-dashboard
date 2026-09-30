@@ -9,6 +9,7 @@ import { getConnection, query } from "./lib/duck";
 import { CONNECTORS, CONNECTOR_BY_ID } from "./connectors/index";
 import { writeLake, writeAggregates } from "./lib/writers";
 import { syncLakeToR2 } from "./lib/r2";
+import { materializeParts } from "./lib/materialize";
 
 async function main() {
   const args = process.argv.slice(2);
@@ -27,32 +28,12 @@ async function main() {
     }
     console.log(`→ ${id}`);
     const parts = await connector.selects(retrievedAt);
+    if (!parts.length) throw new Error(`${id} returned no datasets; publication aborted`);
     selects.push(...parts);
   }
 
-  // Materialize each connector select independently so one bad source can't abort the
-  // whole run, then union the survivors into `m`.
-  const ok: string[] = [];
-  for (let i = 0; i < selects.length; i++) {
-    const tbl = `part_${i}`;
-    try {
-      await conn.run(`CREATE OR REPLACE TABLE ${tbl} AS ${selects[i]}`);
-      const [{ n }] = await query<{ n: number }>(
-        conn,
-        `SELECT count(*) n FROM ${tbl}`,
-      );
-      console.log(`  part_${i}: ${n} rows`);
-      if (n > 0) ok.push(`SELECT * FROM ${tbl}`);
-    } catch (e) {
-      console.error(`  part_${i} FAILED:`, String((e as Error).message).slice(0, 300));
-    }
-  }
-  if (ok.length === 0) {
-    console.error("no data ingested; aborting");
-    process.exit(1);
-  }
-
-  await conn.run(`CREATE OR REPLACE TABLE m AS ${ok.join("\nUNION ALL\n")}`);
+  // Validate every requested part before replacing any published files.
+  await materializeParts(conn, selects);
   const [{ total }] = await query<{ total: number }>(
     conn,
     `SELECT count(*) total FROM m`,

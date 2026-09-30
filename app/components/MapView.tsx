@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { Map as MlMap, GeoJSONSource } from "maplibre-gl";
+import type { Map as MlMap, GeoJSONSource, Popup } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { isStale } from "../lib/freshness";
 import type { RegionMarker } from "../lib/aggregates";
 
 export interface RegionSelection {
@@ -40,6 +41,7 @@ function toGeoJSON(markers: RegionMarker[]): GeoJSON.FeatureCollection {
         value: m.value,
         n_sites: m.n_sites,
         latest_date: m.latest_date,
+        stale: isStale(m.latest_date),
         label: `${m.admin1}, ${m.country}`,
       },
     })),
@@ -56,6 +58,7 @@ export default function MapView({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
   const readyRef = useRef(false);
+  const popupRef = useRef<Popup | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
 
@@ -98,15 +101,20 @@ export default function MapView({
               22,
             ],
             "circle-color": [
-              "interpolate",
-              ["linear"],
-              ["get", "value"],
-              0,
-              "#2c7bb6",
-              50,
-              "#ffff8c",
-              100,
-              "#d7191c",
+              "case",
+              ["get", "stale"],
+              "#94a3b8",
+              [
+                "interpolate",
+                ["linear"],
+                ["get", "value"],
+                0,
+                "#2c7bb6",
+                50,
+                "#ffff8c",
+                100,
+                "#d7191c",
+              ],
             ],
             "circle-opacity": 0.82,
             "circle-stroke-width": 1,
@@ -120,6 +128,12 @@ export default function MapView({
         map.on("click", "region-circles", (e) => {
           const f = e.features?.[0];
           if (!f) return;
+          popupRef.current?.remove();
+          const properties = f.properties;
+          popupRef.current = new maplibregl.Popup()
+            .setLngLat(e.lngLat)
+            .setText(`${properties?.label} · Latest sample: ${properties?.latest_date}${properties?.stale ? " · Stale (over 90 days old)" : ""}`)
+            .addTo(map);
           onSelectRef.current({
             country: String(f.properties?.country),
             admin1: String(f.properties?.admin1),
@@ -136,6 +150,7 @@ export default function MapView({
     return () => {
       cancelled = true;
       resizeObserver?.disconnect();
+      popupRef.current?.remove();
       mapRef.current?.remove();
       mapRef.current = null;
       readyRef.current = false;
@@ -147,6 +162,7 @@ export default function MapView({
   pendingRef.current = markers;
   useEffect(() => {
     if (!mapRef.current || !readyRef.current) return;
+    popupRef.current?.remove();
     const src = mapRef.current.getSource("regions") as GeoJSONSource | undefined;
     src?.setData(toGeoJSON(markers));
   }, [markers]);

@@ -13,6 +13,7 @@ import {
   type SourceCoverage,
   type Trends,
 } from "../lib/aggregates";
+import { isStale } from "../lib/freshness";
 import MapView, { type RegionSelection } from "./MapView";
 import TrendChart, { type TrendSeries } from "./TrendChart";
 import Provenance from "./Provenance";
@@ -33,6 +34,9 @@ const COUNTRY_NAMES: Record<string, string> = {
   NL: "Netherlands",
   AU: "Australia",
 };
+
+// Countries plotted on the national trends chart by default; others toggle on via the legend.
+const DEFAULT_TREND_COUNTRIES = new Set(["US", "CA"]);
 
 export default function Dashboard({ initialView = "trends" }: { initialView?: "trends" | "seasonal" }) {
   const [view, setView] = useState(initialView);
@@ -108,6 +112,7 @@ export default function Dashboard({ initialView = "trends" }: { initialView?: "t
         label: COUNTRY_NAMES[c] ?? c,
         color: COUNTRY_COLORS[c] ?? "#94a3c4",
         data: data!,
+        show: DEFAULT_TREND_COUNTRIES.has(c),
       }));
   }, [selection, trends, pathogen, meta]);
 
@@ -122,6 +127,10 @@ export default function Dashboard({ initialView = "trends" }: { initialView?: "t
     return [...new Set(relevant.flatMap((m) => m.sources ?? []))];
   }, [markers, selection]);
 
+  const selectedMarker = selection
+    ? markers.find((m) => m.country === selection.country && m.admin1 === selection.admin1)
+    : null;
+
   if (error)
     return (
       <div className="panel">
@@ -131,6 +140,8 @@ export default function Dashboard({ initialView = "trends" }: { initialView?: "t
         </p>
       </div>
     );
+
+  if (!meta) return <p className="panel muted" role="status">Loading wastewater data…</p>;
 
   return (
     <ResizablePanels left={
@@ -148,6 +159,7 @@ export default function Dashboard({ initialView = "trends" }: { initialView?: "t
           </div>
           <div style={{ marginTop: 4, color: "var(--muted)" }}>
             marker size = # sites
+            <div>Gray = latest sample over 90 days old</div>
           </div>
         </div>
       </div>
@@ -177,6 +189,12 @@ export default function Dashboard({ initialView = "trends" }: { initialView?: "t
           ))}
         </div>
 
+        {selectedMarker && (
+          <p className="trend-meta">
+            {selectedMarker.admin1}: latest sample {selectedMarker.latest_date}
+            {isStale(selectedMarker.latest_date) ? " · Stale — over 90 days old" : ""}
+          </p>
+        )}
         {view === "seasonal" ? (
           <SeasonalPanel pathogen={pathogen} country={seasonalCountry}
             onCountryChange={setSeasonalCountry} coverage={coverage}

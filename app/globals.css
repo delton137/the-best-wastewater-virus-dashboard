@@ -206,3 +206,26 @@ table.coverage th {
 .muted {
   color: var(--muted);
 }
+
+.maplibregl-popup-content { background: var(--panel); color: var(--text); }
+
+/* Trend chart legend: markers render as checkboxes (checked = series visible). */
+.trend-chart .u-legend .u-series:not(:first-child) { cursor: pointer; }
+.trend-chart .u-legend .u-marker {
+  position: relative;
+  border-radius: 3px;
+}
+.trend-chart .u-legend .u-series:not(:first-child) .u-marker::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 45%;
+  width: 0.3em;
+  height: 0.55em;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.trend-chart .u-legend .u-off .u-marker { background: transparent !important; }
+.trend-chart .u-legend .u-off .u-marker::after { display: none; }
+.trend-chart .u-legend .u-off > * { opacity: 0.5; }

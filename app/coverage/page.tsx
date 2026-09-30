@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { SOURCES } from "@shared/sources";
 import { PATHOGEN_LABELS } from "@shared/schema";
@@ -17,6 +18,8 @@ function datasetLabel(u: string): string {
 }
 
 export default function CoveragePage() {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [cov, setCov] = useState<Record<string, SourceCoverage>>({});
 
   useEffect(() => {
@@ -24,7 +27,8 @@ export default function CoveragePage() {
       .then((rows) =>
         setCov(Object.fromEntries(rows.map((r) => [r.source_id, r]))),
       )
-      .catch(() => setCov({}));
+      .catch((e) => setError(String(e)))
+      .finally(() => setLoading(false));
   }, []);
 
   return (
@@ -33,7 +37,7 @@ export default function CoveragePage() {
         <h1>Data Sources & Coverage</h1>
         <span className="sub">Provenance, history span, and licensing</span>
         <nav>
-          <a href="/">← Dashboard</a>
+          <Link href="/">← Dashboard</Link>
         </nav>
       </header>
 
@@ -46,7 +50,9 @@ export default function CoveragePage() {
           ingested.
         </p>
 
-        <table className="coverage">
+        {loading && <p role="status">Loading source coverage…</p>}
+        {error && <p role="alert">Could not load source coverage: {error}</p>}
+        {!loading && !error && <table className="coverage">
           <thead>
             <tr>
               <th>Source</th>
@@ -121,7 +127,7 @@ export default function CoveragePage() {
               );
             })}
           </tbody>
-        </table>
+        </table>}
 
         <p className="muted" style={{ marginTop: 20, fontSize: 12 }}>
           Roadmap sources (RIVM NL, RKI DE, Obépine FR, Eawag CH, Queensland AU,

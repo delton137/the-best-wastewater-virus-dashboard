@@ -22,8 +22,14 @@ export async function writeLake(conn: DuckDBConnection): Promise<void> {
  * Compute within-site standardized values, then write the small JSON aggregates the
  * dashboard reads directly: region markers (map), trends (charts), coverage, meta.
  */
-export async function writeAggregates(conn: DuckDBConnection): Promise<void> {
-  await mkdir(AGG_DIR, { recursive: true });
+export async function writeAggregates(
+  conn: DuckDBConnection,
+  outputDir = AGG_DIR,
+): Promise<void> {
+  await mkdir(outputDir, { recursive: true });
+  const writeJson = async (name: string, data: unknown) => {
+    await writeFile(path.join(outputDir, name), JSON.stringify(data), "utf8");
+  };
 
   // site_pct = within-site percentile of value_raw over that site's full history (0-100).
   // This is the cross-source comparable metric; absolute concentrations are not comparable.
@@ -65,16 +71,22 @@ export async function writeAggregates(conn: DuckDBConnection): Promise<void> {
       SELECT country, admin1, pathogen, max(sample_date) AS maxd FROM mp
       WHERE admin1 IS NOT NULL GROUP BY 1,2,3
     ),
-    win AS (
-      SELECT mp.country, mp.admin1, mp.pathogen,
-             round(avg(mp.site_pct), 1) AS value,
-             count(DISTINCT mp.site_id) AS n_sites,
-             strftime(max(mp.sample_date), '%Y-%m-%d') AS latest_date,
-             list(DISTINCT mp.source_id) AS sources
+    site_window AS (
+      SELECT mp.country, mp.admin1, mp.pathogen, mp.site_id, mp.source_id,
+             avg(mp.site_pct) AS site_value,
+             max(mp.sample_date) AS latest_date
       FROM mp JOIN latest l
         ON mp.country=l.country AND mp.admin1=l.admin1 AND mp.pathogen=l.pathogen
        AND mp.sample_date >= l.maxd - INTERVAL 28 DAY
-      GROUP BY 1,2,3
+      GROUP BY 1,2,3,4,5
+    ),
+    win AS (
+      SELECT country, admin1, pathogen,
+             round(avg(site_value), 1) AS value,
+             count(DISTINCT site_id) AS n_sites,
+             strftime(max(latest_date), '%Y-%m-%d') AS latest_date,
+             list(DISTINCT source_id) AS sources
+      FROM site_window GROUP BY 1,2,3
     )
     SELECT w.*, c.lat, c.lon
     FROM win w LEFT JOIN centroids c
@@ -94,16 +106,20 @@ export async function writeAggregates(conn: DuckDBConnection): Promise<void> {
   }>(
     conn,
     `
+    WITH site_week AS (
+      SELECT country, admin1, pathogen, site_id,
+             strftime(date_trunc('week', sample_date), '%Y-%m-%d') AS week,
+             avg(site_pct) AS site_value
+      FROM mp GROUP BY 1,2,3,4,5
+    )
     SELECT country, admin1, pathogen, week, value FROM (
       SELECT country, admin1, pathogen,
-             strftime(date_trunc('week', sample_date), '%Y-%m-%d') AS week,
-             round(avg(site_pct),1) AS value
-      FROM mp WHERE admin1 IS NOT NULL GROUP BY 1,2,3,4
+             week, round(avg(site_value),1) AS value
+      FROM site_week WHERE admin1 IS NOT NULL GROUP BY 1,2,3,4
       UNION ALL
       SELECT country, 'ALL' AS admin1, pathogen,
-             strftime(date_trunc('week', sample_date), '%Y-%m-%d') AS week,
-             round(avg(site_pct),1) AS value
-      FROM mp GROUP BY 1,2,3,4
+             week, round(avg(site_value),1) AS value
+      FROM site_week GROUP BY 1,2,3,4
     ) ORDER BY country, admin1, pathogen, week
   `,
   );
@@ -170,7 +186,7 @@ export async function writeAggregates(conn: DuckDBConnection): Promise<void> {
            round(month(wk + INTERVAL 3 DAY)
                  + (day(wk + INTERVAL 3 DAY) - 1.0)
                    / day(last_day(wk + INTERVAL 3 DAY)), 4) AS x,
-           round(median(site_val))   AS val,
+           median(site_val)          AS val,
            any_value(unit)           AS unit,
            count(DISTINCT site_id)   AS n_sites
     FROM site_week
@@ -228,8 +244,4 @@ export async function writeAggregates(conn: DuckDBConnection): Promise<void> {
   console.log(
     `aggregates: ${regions.length} region markers, ${Object.keys(trends).length} trend series, ${coverage.length} sources`,
   );
-}
-
-async function writeJson(name: string, data: unknown): Promise<void> {
-  await writeFile(path.join(AGG_DIR, name), JSON.stringify(data), "utf8");
 }

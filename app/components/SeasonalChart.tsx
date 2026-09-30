@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import type uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
+import { fmtCount } from "../lib/format";
 import type { SeasonalEntry } from "../lib/aggregates";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -11,16 +12,6 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 function colorForYear(idx: number, total: number): string {
   const hue = total <= 1 ? 210 : 210 - (210 * idx) / (total - 1);
   return `hsl(${Math.round(hue)}, 75%, 58%)`;
-}
-
-/** Compact objective-unit formatter: 3.0e7 → "30M". */
-export function fmtCount(v: number | null): string {
-  if (v == null || Number.isNaN(v)) return "";
-  const a = Math.abs(v);
-  if (a >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
-  if (a >= 1e6) return `${(v / 1e6).toFixed(a >= 1e7 ? 0 : 1)}M`;
-  if (a >= 1e3) return `${(v / 1e3).toFixed(0)}k`;
-  return String(Math.round(v));
 }
 
 /** Centered moving average over a window of `w` weekly points (w<=1 → no-op). */
@@ -85,7 +76,7 @@ export default function SeasonalChart({
         x: { time: false, range: [1, 13] },
         y: logScale
           ? { distr: 3 }
-          : { range: (_u, _min, max) => [0, max * 1.05] },
+          : { range: (_u, _min, max) => [0, max > 0 ? max * 1.05 : 1] },
       },
       legend: { show: true },
       axes: [

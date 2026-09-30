@@ -31,7 +31,7 @@ Vercel (Next.js)  ──serves──▶  static JSON aggregates (map + trends)
   connector is a thin SQL transform reading a source (Socrata / CSV / GitHub) and emitting
   the unified `Measurement` schema. See `ingestion/connectors/`.
 - **Aggregates** — `ingestion/lib/writers.ts` computes each site's within-history
-  percentile, then writes small JSON (`public/aggregates/`) the dashboard reads directly,
+  percentile, averages each site's readings before averaging across sites, then writes small JSON (`public/aggregates/`) the dashboard reads directly,
   plus a partitioned Parquet lake (`data/lake/`, optionally synced to R2).
 - **Frontend** — Next.js (App Router) + MapLibre GL (OpenStreetMap raster basemap) + uPlot.
 
@@ -97,3 +97,22 @@ Canada: Open Government Licence; ESR NZ: open). Every value links back to its so
 the [coverage page](/coverage). Attribution is preserved per source license.
 
 See the full source inventory and roadmap in the project plan.
+
+## Validation and data safeguards
+
+```bash
+npm run typecheck
+npm run lint
+npm test
+npm run build
+```
+
+All requested datasets must return rows successfully before ingestion replaces the
+published files. A failed or empty dataset aborts the run and retains the existing
+lake and aggregates. An explicitly selected subset still replaces the dataset with
+that subset; use `ingest:all` for production refreshes.
+
+Map and trend averages give each reporting site equal weight within the displayed
+window or week. Seasonal medians retain fractional concentrations. Gray map markers
+have a latest sample more than 90 days old; selecting a marker shows its sample date.
+This threshold indicates data freshness, not a health-risk category.

@@ -8,6 +8,7 @@ export interface TrendSeries {
   label: string;
   color: string;
   data: [string, number][]; // [weekISO, value]
+  show?: boolean; // initial visibility; toggle via the legend checkbox
 }
 
 /** Align multiple [date,value] series onto a shared x axis (union of dates). */
@@ -42,7 +43,11 @@ export default function TrendChart({ series }: { series: TrendSeries[] }) {
       width: el.clientWidth || 600,
       height: 320,
       scales: { y: { range: [0, 100] } },
-      legend: { show: true },
+      legend: {
+        show: true,
+        // Filled marker = checked box; CSS draws the check mark and empties it when off.
+        markers: { fill: (_u, i) => series[i - 1]?.color ?? "transparent" },
+      },
       axes: [
         {
           stroke: "#94a3c4",
@@ -62,6 +67,7 @@ export default function TrendChart({ series }: { series: TrendSeries[] }) {
           label: s.label,
           stroke: s.color,
           width: 2,
+          show: s.show ?? true,
           points: { show: false },
         })),
       ],
@@ -93,5 +99,5 @@ export default function TrendChart({ series }: { series: TrendSeries[] }) {
     plotRef.current?.setData(data);
   }, [data]);
 
-  return <div ref={ref} style={{ width: "100%" }} />;
+  return <div ref={ref} className="trend-chart" style={{ width: "100%" }} />;
 }

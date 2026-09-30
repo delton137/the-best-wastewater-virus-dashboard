@@ -26,20 +26,23 @@ export default function SeasonalPanel({ pathogen, country, onCountryChange, cove
   updatedAt?: string;
 }) {
   const [seasonal, setSeasonal] = useState<Seasonal>({});
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [logScale, setLogScale] = useState(false);
   const [smoothWeeks, setSmoothWeeks] = useState(1);
 
   useEffect(() => {
-    loadSeasonal().then(setSeasonal).catch((e) => setError(String(e)));
+    loadSeasonal().then(setSeasonal).catch((e) => setError(String(e))).finally(() => setLoading(false));
   }, []);
 
   const countries = useMemo(() => Object.keys(seasonal).sort(), [seasonal]);
   const entry = seasonal[country]?.[pathogen];
 
+  if (loading) return <p className="muted" role="status">Loading seasonal data…</p>;
+  if (error) return <p className="muted" role="alert">Could not load seasonal data: {error}</p>;
+
   return (
     <>
-        {error && <p className="muted">Could not load data: {error}</p>}
 
         <div className="controls">
           {countries.map((c) => (
